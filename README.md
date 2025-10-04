@@ -96,6 +96,13 @@ python3 stream_pihole_logs.py --filter 192.168.1.100
 python3 stream_pihole_logs.py --blocked-only
 ```
 
+### Verbose Mode (Show All Log Lines)
+
+By default, only query and block lines are shown. Use verbose mode to see cache/reply/forwarded lines:
+```bash
+python3 stream_pihole_logs.py --verbose
+```
+
 ### All Options
 
 ```bash
@@ -103,7 +110,8 @@ python3 stream_pihole_logs.py --pihole1 pihole1.local \
                                --pihole2 pihole2.local \
                                --username pi \
                                --filter "macbook" \
-                               --blocked-only
+                               --blocked-only \
+                               --verbose
 ```
 
 ### Command-line Options
@@ -114,6 +122,7 @@ python3 stream_pihole_logs.py --pihole1 pihole1.local \
 -u, --username  SSH username (default: pi)
 -f, --filter    Filter by hostname or IP
 -b, --blocked-only  Show only blocked queries
+-v, --verbose   Show all log lines including cache/reply/forwarded
 ```
 
 ## Output Format

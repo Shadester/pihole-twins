@@ -81,7 +81,7 @@ class PiHoleStreamer:
 
         return None
 
-    async def stream_logs(self, queue: asyncio.Queue, show_blocked_only: bool = False, filter_host: Optional[str] = None):
+    async def stream_logs(self, queue: asyncio.Queue, show_blocked_only: bool = False, filter_host: Optional[str] = None, verbose: bool = False):
         """Stream logs from Pi-hole and add to queue."""
         if not self.client:
             raise RuntimeError("Not connected. Call connect() first.")
@@ -129,8 +129,8 @@ class PiHoleStreamer:
 
                 await queue.put(formatted)
             else:
-                # If we can't parse it, only show it if no filter is active and not blocked-only mode
-                if not filter_host and not show_blocked_only:
+                # If we can't parse it, only show it in verbose mode (or when no filters active)
+                if verbose and not filter_host and not show_blocked_only:
                     timestamp = datetime.now().strftime('%H:%M:%S')
                     formatted = f"[{timestamp}] {self.color}[{self.hostname}]{Colors.RESET} {line}"
                     await queue.put(formatted)
@@ -171,8 +171,8 @@ async def main(args):
 
         # Start streaming from both servers and displaying output
         await asyncio.gather(
-            streamer1.stream_logs(queue, args.blocked_only, args.filter),
-            streamer2.stream_logs(queue, args.blocked_only, args.filter),
+            streamer1.stream_logs(queue, args.blocked_only, args.filter, args.verbose),
+            streamer2.stream_logs(queue, args.blocked_only, args.filter, args.verbose),
             display_queue(queue)
         )
 
@@ -195,6 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--username', '-u', default='pi', help='SSH username (default: pi)')
     parser.add_argument('--blocked-only', '-b', action='store_true', help='Show only blocked queries')
     parser.add_argument('--filter', '-f', help='Filter by hostname or IP')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show all log lines including cache/reply/forwarded')
 
     args = parser.parse_args()
 
