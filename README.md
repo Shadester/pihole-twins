@@ -19,11 +19,34 @@ Stream and merge DNS query logs from two Pi-hole servers in real-time. Perfect f
 - Passwordless sudo for the `pihole` command on both servers
 - Pi-hole servers accessible on your network
 
+### Setting up SSH Key Authentication
+
+If you don't already have SSH keys set up:
+
+1. **Generate SSH key** (on your local machine, if you don't have one):
+```bash
+ssh-keygen -t ed25519 -C "your_email@example.com"
+# Press Enter to accept defaults
+```
+
+2. **Copy SSH key to both Pi-holes**:
+```bash
+ssh-copy-id pi@pihole1
+ssh-copy-id pi@pihole2
+```
+
+3. **Test passwordless login**:
+```bash
+ssh pi@pihole1  # Should connect without asking for password
+ssh pi@pihole2
+```
+
 ### Setting up Passwordless Sudo
 
 On each Pi-hole server, create `/etc/sudoers.d/pihole`:
 ```bash
-echo "pi ALL=(ALL) NOPASSWD: /usr/local/bin/pihole" | sudo tee /etc/sudoers.d/pihole
+ssh pi@pihole1 "echo 'pi ALL=(ALL) NOPASSWD: /usr/local/bin/pihole' | sudo tee /etc/sudoers.d/pihole"
+ssh pi@pihole2 "echo 'pi ALL=(ALL) NOPASSWD: /usr/local/bin/pihole' | sudo tee /etc/sudoers.d/pihole"
 ```
 
 Replace `pi` with your SSH username if different.
