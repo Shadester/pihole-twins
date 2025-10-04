@@ -25,8 +25,8 @@ If you don't already have SSH keys set up:
 
 1. **Generate SSH key** (on your local machine, if you don't have one):
 ```bash
-ssh-keygen -t ed25519 -C "your_email@example.com"
-# Press Enter to accept defaults
+ssh-keygen -t ed25519
+# Press Enter to accept all defaults (email/comment is optional)
 ```
 
 2. **Copy SSH key to both Pi-holes**:
