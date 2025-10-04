@@ -129,8 +129,8 @@ class PiHoleStreamer:
 
                 await queue.put(formatted)
             else:
-                # If we can't parse it, only show it if no filter is active
-                if not filter_host:
+                # If we can't parse it, only show it if no filter is active and not blocked-only mode
+                if not filter_host and not show_blocked_only:
                     timestamp = datetime.now().strftime('%H:%M:%S')
                     formatted = f"[{timestamp}] {self.color}[{self.hostname}]{Colors.RESET} {line}"
                     await queue.put(formatted)
