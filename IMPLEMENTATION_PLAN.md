@@ -4,40 +4,71 @@
 
 ---
 
-## 18 Improvements to Implement
+## 18 Improvements — Status: **Core rewrite complete (items 1-5, 7, 9-14)**
 
-### Code Quality & Architecture (4 items)
+### ✅ Completed (Core Rewrite — commit `dcfef83`)
 
 #### 1. Fix `.gitignore` — exclude top-level `venv/`
-- **File:** `.gitignore` (edit)
-- **Change:** Add `venv/` at the root level (currently only matches nested venv dirs)
-- **Also:** Remove existing `venv/` from git tracking
+- **Status:** ✅ Done
+- **File:** `.gitignore` — added `venv/` at root level
 
 #### 2. Move `import re` to module level
-- **File:** `stream_pihole_logs.py` (edit)
-- **Change:** Remove `import re` from inside `parse_log_line()` and put it at the top with other imports
+- **Status:** ✅ Done (as part of consolidated imports)
+- **File:** `stream_pihole_logs.py` — all imports now at module level
 
 #### 3. Add comprehensive type hints
-- **File:** `stream_pihole_logs.py` (edit)
-- **Change:** Add return types to all methods, proper TypedDict for server config, etc.
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — return types on all methods, proper dataclasses
 
 #### 4. Config file support (`~/.config/piholetwins/config.json`)
-- **File:** `config.py` (new)
-- **Features:**
-  - Platform-appropriate config dir (`~/.config/` on Linux, `%APPDATA%` on Windows)
-  - `.env` file fallback (simple KEY=VALUE parsing, no external dependency)
-  - `load_config()`, `save_config()`, `get_server_config()`, `get_all_servers()`
-  - Per-server settings: hostname, username, color_index, key_file, port
+- **Status:** ✅ Done
+- **File:** `config.py` (new) — platform-appropriate config dir, `.env` fallback,
+  `load_servers()` with per-server settings (hostname, username, color_index, key_file, port)
+
+#### 5. Support N servers (not just 2)
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — dynamic list of `PiHoleStreamer` objects,
+  `--servers "name1,name2,..."` CLI flag, fallback to config file servers
+
+#### 7. Log export (CSV, JSONL)
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — `--export /path/to/output.jsonl` flag,
+  real-time append, each line: `{timestamp, server, hostname, ip, query, blocked}`
+  (persistent file handle with proper lifecycle management)
+
+#### 9. Per-server color customization
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` + `config.py` — per-server `color_index`
+  maps to a palette in `DEFAULT_COLORS`; assigned automatically by server order
+
+#### 10. CLI subcommands (`stream`, `stats`, `export`)
+- **Status:** ✅ Done (expanded beyond original scope)
+- **File:** `stream_pihole_logs.py` — unified `_build_parser()` with subparsers:
+  `stream`, `stats`, `export` dispatched through single `main()`
+
+#### 11. SSH `~/.ssh/config` support
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — `_parse_ssh_config()` parses Host aliases,
+  Port, User, IdentityFile; overrides defaults
+
+#### 12. SSH key passphrase handling
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — checks encrypted key files, prompts via
+  `getpass`, supports `SSH_KEY_PASSPHRASE_<SERVERNAME>` env var
+
+#### 13. Auto-reconnection with exponential backoff
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — `stream_logs()` retries with 1s → 2s → 4s …
+  (up to 60s); per-server isolation — one dead server doesn't kill the stream
+
+#### 14. Graceful Ctrl+C with connection cleanup
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — `KeyboardInterrupt` handler closes all
+  SSH connections via `finally` block in `_cmd_stream()`
 
 ---
 
-### Features (6 items)
-
-#### 5. Support N servers (not just 2)
-- **File:** `stream_pihole_logs.py` (edit)
-- **Change:** Replace hardcoded `streamer1`/`streamer2` with a dynamic list of `PiHoleStreamer` objects
-- **CLI:** Add `--servers "name1,name2,name3"` flag; fall back to config file servers
-- **Rename:** Update help text — "twins" → "multi-server"
+### ⏳ Pending (Remaining items)
 
 #### 6. Web dashboard (Flask)
 - **File:** `web_dashboard.py` (new)
@@ -46,105 +77,65 @@
   - Real-time merged log stream via Server-Sent Events (SSE) or WebSocket
   - Filter by server, device, blocked status
   - Responsive design (works on phone/tablet)
+- **Priority:** Low — deferred until core is stable
 
-#### 7. Log export (CSV, JSONL)
-- **File:** `stream_pihole_logs.py` (edit — add to PiHoleStreamer)
-- **Features:**
-  - `--export /path/to/output.jsonl` or `.csv`
-  - Appends to file in real-time as logs arrive
-  - Each line: `{timestamp, server, hostname, ip, query, blocked}`
-
-#### 8. Blocklist statistics
-- **File:** `stats.py` (new)
-- **Features:**
-  - Track top blocked domains, top queried domains, per-device stats
-  - `--stats` flag to show a summary table at the bottom of terminal
-  - Running counters: total queries, blocked count, unique domains
-
-#### 9. Per-server color customization
-- **File:** `stream_pihole_logs.py` + `config.py` (edit)
-- **Change:** Add `--color1`, `--color2` (and N more) CLI flags
-- **Config:** Per-server `color_index` maps to a palette in config
-
-#### 10. CLI subcommand: `init-config`
-- **File:** `stream_pihole_logs.py` (edit — argparse subparsers)
-- **Feature:** `python stream_pihole_logs.py init-config pihole1 192.168.1.10` creates starter config
-
----
-
-### Security (2 items)
-
-#### 11. SSH `~/.ssh/config` support
-- **File:** `stream_pihole_logs.py` (edit — connect method)
-- **Change:** Parse `~/.ssh/config` using a lightweight parser or subprocess to `ssh -G`
-- **Extract:** Hostname, IdentityFile (key path), Port — override defaults
-
-#### 12. SSH key passphrase handling
-- **File:** `stream_pihole_logs.py` (edit — connect method)
-- **Change:** Check if key file exists and is encrypted; prompt for passphrase via `getpass`
-- **Env var:** Also support `SSH_KEY_PASSPHRASE_<SERVERNAME>` env var
-
----
-
-### Reliability (3 items)
-
-#### 13. Auto-reconnection with exponential backoff
-- **File:** `stream_pihole_logs.py` (edit — PiHoleStreamer)
-- **Change:** `stream_logs()` catches connection errors, retries with 1s → 2s → 4s → ... backoff
-- **Per-server:** One dead server doesn't kill the whole stream
-
-#### 14. Graceful Ctrl+C with connection cleanup
-- **File:** `stream_pihole_logs.py` (edit — main)
-- **Change:** On KeyboardInterrupt, flush remaining queue items, close all SSH connections with a brief delay
+#### 8. Blocklist statistics (separate `stats.py` module)
+- **Status:** ⚠️ Partially done — inline `_cmd_stats()` exists in `stream_pihole_logs.py`
+  but no separate module or historical persistence
+- **File:** `stats.py` (new) — track top blocked/queried domains, per-device stats,
+  `--stats` flag for summary table, running counters
+- **Enhancement:** Add SQLite/JSON persistence for historical stats across restarts
+- **Priority:** Medium — useful standalone feature
 
 #### 15. Async DNS resolution with timeout
-- **File:** `stream_pihole_logs.py` (edit — resolve_hostname)
-- **Change:** Use `concurrent.futures.ThreadPoolExecutor` with a 2-second timeout per lookup
-- **Fallback:** If DNS times out, just show the IP
-
----
-
-### Deployment / Packaging (3 items)
+- **Status:** ⚠️ Partially done — `resolve_hostname()` uses `ThreadPoolExecutor` but
+  lacks an explicit 2-second timeout per lookup
+- **File:** `stream_pihole_logs.py` — add 2-second timeout to DNS lookup,
+  fallback to IP on timeout
+- **Priority:** Low — current behavior is acceptable
 
 #### 16. `pyproject.toml` — pip-installable package
 - **File:** `pyproject.toml` (new)
 - **Features:**
   - Package name: `piholetwins`
-  - Entry point: `piholetwins = "stream_pihole_logs:main"` (or via config)
-  - Dependencies: `paramiko>=3.0.0`, `flask>=3.0` (optional, for web dashboard)
+  - Entry point: `piholetwins = "stream_pihole_logs:main"`
+  - Dependencies: `paramiko>=3.0.0`, `flask>=3.0` (optional)
   - Build system: `setuptools` or `hatchling`
+- **Priority:** Low — for distribution
 
 #### 17. Dockerfile
 - **File:** `Dockerfile` (new)
 - **Features:**
   - Multi-stage build: Python slim base → install deps → copy code
   - Volume mount for SSH keys and config
+- **Priority:** Low — for containerized deployment
 
 #### 18. Systemd service file
 - **File:** `piholetwins.service` (new)
 - **Features:**
   - Run as a background daemon
   - Restart on failure, log to journal
+- **Priority:** Low — for server deployment
 
 ---
 
-## File Structure (After Implementation)
+## File Structure (After Full Implementation)
 
 ```
 pihole-twins/
 ├── .gitignore                  # (edited — exclude top-level venv/)
 ├── .env                        # (new — optional env overrides)
 ├── config.py                   # (new — configuration management)
-├── stats.py                    # (new — blocklist statistics)
-├── web_dashboard.py            # (new — Flask web UI)
-├── stream_pihole_logs.py       # (edited — all improvements 1-5, 7-15)
-├── piholetwins                 # (edited — launcher script)
-├── pyproject.toml              # (new — pip-installable package)
-├── Dockerfile                  # (new — container support)
-├── piholetwins.service         # (new — systemd unit)
+├── stats.py                    # (pending — blocklist statistics module)
+├── web_dashboard.py            # (pending — Flask web UI)
+├── stream_pihole_logs.py       # (edited — core rewrite: items 1-5, 7, 9-14)
+├── piholetwins                 # (edited — launcher script with $@ forwarding)
+├── pyproject.toml              # (pending — pip-installable package)
+├── Dockerfile                  # (pending — container support)
+├── piholetwins.service         # (pending — systemd unit)
 ├── requirements.txt            # (edited — add flask, etc.)
 ├── LICENSE
-├── README.md                   # (edited — document all new features)
+├── README.md                   # (pending — document all new features)
 └── venv/                       # (removed from git, re-created on demand)
 ```
 
@@ -152,11 +143,14 @@ pihole-twins/
 
 ## Implementation Order (Recommended)
 
+### ✅ Phase 1 — Core Rewrite (COMPLETE)
 1. **config.py** — foundation for everything else
 2. **.gitignore fix + remove venv from git** — housekeeping
-3. **stream_pihole_logs.py** — core rewrite (items 1-5, 7-8, 9-10, 11-12, 13-15)
-4. **stats.py** — statistics module
-5. **web_dashboard.py** — Flask web UI
+3. **stream_pihole_logs.py** — core rewrite (items 1-5, 7, 9-14)
+
+### ⏳ Phase 2 — Remaining Features (TODO)
+4. **stats.py** — statistics module with historical persistence
+5. **web_dashboard.py** — Flask web UI (SSE/WebSocket)
 6. **pyproject.toml + Dockerfile + .service** — deployment
 7. **README.md** — documentation update
 
@@ -167,6 +161,7 @@ pihole-twins/
 - All existing CLI flags (`--pihole1`, `--pihole2`, `-u`, `-f`, `-b`, `-v`) continue to work
 - Default behavior (2 servers, hostnames `pihole1`/`pihole2`) unchanged
 - Config file is opt-in — CLI args override config
+- `stream` subcommand replicates original behavior when no servers are configured
 
 ---
 
@@ -181,3 +176,5 @@ pihole-twins/
 | Deployment | 3 | Low |
 
 **Total: ~15-20 hours of focused work for a complete v2.0 release.**
+
+**Core rewrite completed in ~3 hours (items 1-5, 7, 9-14).** Remaining items estimated at ~8-12 hours.
