@@ -4,8 +4,10 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
+# Virtual environments (top-level)
 venv/
+env/
+ENV/
 ENV/
 build/
 develop-eggs/

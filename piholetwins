@@ -1,0 +1,9 @@
+#!/bin/bash
+# Pi-hole Twins Log Streamer launcher
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Activate the virtual environment and run the Python script
+source "$SCRIPT_DIR/venv/bin/activate"
+exec python3 "$SCRIPT_DIR/stream_pihole_logs.py" "$@"
