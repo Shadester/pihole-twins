@@ -1,0 +1,23 @@
+[Unit]
+Description=Pi-hole Twins - Multi-server Pi-hole log streamer
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/pihole-twins
+ExecStart=/opt/pihole-tvens/.venv/bin/python stream_pihole_logs.py stream --servers pi01 pi02
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/appuser/.config/piholetwins
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

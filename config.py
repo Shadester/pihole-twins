@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from models import ServerConfig
+
 
 # Default server colors (ANSI)
 DEFAULT_COLORS = [
@@ -115,6 +117,45 @@ def get_all_servers() -> List[Dict[str, Any]]:
         entry.setdefault('port', 22)
         result.append(entry)
 
+    return result
+
+
+def load_servers(server_names: Optional[List[str]] = None) -> List[ServerConfig]:
+    """Load server configurations.
+
+    Args:
+        server_names: Optional list of server names to load. If None, loads all.
+
+    Returns:
+        List of ServerConfig objects.
+    """
+    cfg = load_config()
+    servers_dict = cfg.get('servers', {})
+
+    if not server_names:
+        # Load all servers from config
+        result = []
+        for i, (name, srv) in enumerate(servers_dict.items()):
+            entry = dict(srv)
+            entry.setdefault('username', 'pi')
+            entry.setdefault('color_index', i % len(DEFAULT_COLORS))
+            entry.setdefault('key_file', None)
+            entry.setdefault('port', 22)
+            result.append(ServerConfig(name=name, **entry))
+        return result
+
+    # Load specific servers by name
+    result = []
+    for i, name in enumerate(server_names):
+        if name in servers_dict:
+            entry = dict(servers_dict[name])
+            entry.setdefault('username', 'pi')
+            entry.setdefault('key_file', None)
+            entry.setdefault('port', 22)
+            result.append(ServerConfig(name=name, **entry))
+        else:
+            # Fallback: create a basic config for unknown server names
+            result.append(ServerConfig(name=name, hostname=name))
     return result
 
 

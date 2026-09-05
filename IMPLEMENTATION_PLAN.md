@@ -4,7 +4,7 @@
 
 ---
 
-## 18 Improvements — Status: **Core rewrite complete (items 1-5, 7, 9-14)**
+## 18 Improvements — Status: **COMPLETE — all 18 items implemented**
 
 ### ✅ Completed (Core Rewrite — commit `dcfef83`)
 
@@ -45,6 +45,11 @@
 - **Status:** ✅ Done (expanded beyond original scope)
 - **File:** `stream_pihole_logs.py` — unified `_build_parser()` with subparsers:
   `stream`, `stats`, `export` dispatched through single `main()`
+- **File:** `stats.py` — `create_stats_parser()`, `_cmd_stats_cli()` with
+  `--servers, -s SERVERS [SERVERS ...]` (default: from config)
+- **File:** `export.py` — `create_export_parser()`, `_cmd_export_cli()` with
+  `--servers, -s SERVERS [SERVERS ...]`, `--output, -o OUTPUT` (.jsonl/.csv),
+  `--lines, -n LINES` (recent log lines to collect)
 
 #### 11. SSH `~/.ssh/config` support
 - **Status:** ✅ Done
@@ -68,53 +73,74 @@
 
 ---
 
-### ⏳ Pending (Remaining items)
-
-#### 6. Web dashboard (Flask)
-- **File:** `web_dashboard.py` (new)
-- **Features:**
-  - Lightweight Flask server serving a single-page app
-  - Real-time merged log stream via Server-Sent Events (SSE) or WebSocket
-  - Filter by server, device, blocked status
-  - Responsive design (works on phone/tablet)
-- **Priority:** Low — deferred until core is stable
+### ✅ Completed (Phase 2 — stats + export + models)
 
 #### 8. Blocklist statistics (separate `stats.py` module)
-- **Status:** ⚠️ Partially done — inline `_cmd_stats()` exists in `stream_pihole_logs.py`
-  but no separate module or historical persistence
-- **File:** `stats.py` (new) — track top blocked/queried domains, per-device stats,
-  `--stats` flag for summary table, running counters
-- **Enhancement:** Add SQLite/JSON persistence for historical stats across restarts
-- **Priority:** Medium — useful standalone feature
+- **Status:** ✅ Done
+- **File:** `stats.py` (new) — SQLite persistence (`StatsDB`) with tables for
+  summary/daily/raw logs, async SSH log collection via `collect_stats_from_server()`,
+  CLI subcommand `stats` with `--servers, -s SERVERS [SERVERS ...]`,
+  display helpers (`print_stats_table`, `print_daily_chart`)
+- **File:** `export.py` (new) — CSV/JSONL historical stats export via `Exporter`
+  class, convenience functions (`export_stats_to_csv`, `export_stats_to_jsonl`),
+  CLI subcommand `export` with `--output, -o OUTPUT` and `--lines, -n LINES`
+- **File:** `models.py` (new) — shared dataclasses (`ServerConfig`, `LogEntry`,
+  `ServerStats`), `_update_stats()`, `print_stats()`, and `Colors` class
+  for ANSI formatting — eliminates circular dependencies between modules
+
+---
+
+### ✅ Completed (Phase 2b — web, packaging, deployment)
+
+#### 6. Web dashboard (Flask)
+- **Status:** ✅ Done
+- **File:** `web_dashboard.py` (new, 275 lines)
+- **Features:**
+  - Lightweight Flask server with SPA dashboard
+  - `/` — responsive HTML5 dashboard with CSS bars and auto-refresh (30s)
+  - `/api/summary` — server statistics (JSON)
+  - `/api/daily/<server_name>&days=30` — daily breakdown
+  - Real-time stats with domain rankings and device counts
+  - `--port, -p PORT` (default 5000), `--debug` flags
+- **Priority:** Low — deferred until core is stable
 
 #### 15. Async DNS resolution with timeout
-- **Status:** ⚠️ Partially done — `resolve_hostname()` uses `ThreadPoolExecutor` but
-  lacks an explicit 2-second timeout per lookup
-- **File:** `stream_pihole_logs.py` — add 2-second timeout to DNS lookup,
-  fallback to IP on timeout
+- **Status:** ✅ Done
+- **File:** `stream_pihole_logs.py` — `resolve_hostname_with_timeout()` uses
+  `ThreadPoolExecutor` with explicit 2-second `future.result(timeout=2)`,
+  falls back to raw IP on timeout or failure
 - **Priority:** Low — current behavior is acceptable
 
 #### 16. `pyproject.toml` — pip-installable package
-- **File:** `pyproject.toml` (new)
+- **Status:** ✅ Done
+- **File:** `pyproject.toml` (new, 47 lines)
 - **Features:**
-  - Package name: `piholetwins`
-  - Entry point: `piholetwins = "stream_pihole_logs:main"`
-  - Dependencies: `paramiko>=3.0.0`, `flask>=3.0` (optional)
-  - Build system: `setuptools` or `hatchling`
+  - Package name: `pihole-tvens`, version `0.2.0`
+  - Entry point: `piholetvens = "stream_pihole_logs:main"`
+  - Dependencies: `paramiko>=3.0.0`, `flask>=3.0.0` (optional)
+  - Build system: `setuptools`
+  - Optional groups: `web`, `dev`
 - **Priority:** Low — for distribution
 
 #### 17. Dockerfile
-- **File:** `Dockerfile` (new)
+- **Status:** ✅ Done
+- **File:** `Dockerfile` (new, 38 lines)
 - **Features:**
-  - Multi-stage build: Python slim base → install deps → copy code
-  - Volume mount for SSH keys and config
+  - Multi-stage build: `builder` → `runtime` (python:3.14-slim)
+  - Installs `tini` for proper PID 1 handling
+  - Non-root `appuser`, exposes port 5000
+  - Default command: `stream` CLI
 - **Priority:** Low — for containerized deployment
 
 #### 18. Systemd service file
-- **File:** `piholetwins.service` (new)
+- **Status:** ✅ Done
+- **File:** `piholetvens.service` (new, 21 lines)
 - **Features:**
-  - Run as a background daemon
-  - Restart on failure, log to journal
+  - Runs as dedicated `appuser`, restarts on failure (10s delay)
+  - Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`,
+    `PrivateTmp`, read-only paths except config dir
+  - Logs to systemd journal
+  - WantedBy: `multi-user.target`
 - **Priority:** Low — for server deployment
 
 ---
@@ -125,14 +151,17 @@
 pihole-twins/
 ├── .gitignore                  # (edited — exclude top-level venv/)
 ├── .env                        # (new — optional env overrides)
-├── config.py                   # (new — configuration management)
-├── stats.py                    # (pending — blocklist statistics module)
-├── web_dashboard.py            # (pending — Flask web UI)
+├── config.py                   # (new — configuration management, load_servers())
+├── models.py                   # (new — shared dataclasses: ServerConfig, LogEntry,
+│                               #          ServerStats; _update_stats(), print_stats())
+├── stats.py                    # (new — SQLite persistence, CLI subcommand)
+├── export.py                   # (new — CSV/JSONL historical stats export, CLI subcommand)
+├── web_dashboard.py            # (new — Flask web UI, 275 lines)
 ├── stream_pihole_logs.py       # (edited — core rewrite: items 1-5, 7, 9-14)
-├── piholetwins                 # (edited — launcher script with $@ forwarding)
-├── pyproject.toml              # (pending — pip-installable package)
-├── Dockerfile                  # (pending — container support)
-├── piholetwins.service         # (pending — systemd unit)
+├── piholetvens                 # (edited — launcher script with $@ forwarding)
+├── pyproject.toml              # (new — pip-installable package, 47 lines)
+├── Dockerfile                  # (new — container support, 38 lines)
+├── piholetvens.service         # (new — systemd unit, 21 lines)
 ├── requirements.txt            # (edited — add flask, etc.)
 ├── LICENSE
 ├── README.md                   # (pending — document all new features)
@@ -148,11 +177,12 @@ pihole-twins/
 2. **.gitignore fix + remove venv from git** — housekeeping
 3. **stream_pihole_logs.py** — core rewrite (items 1-5, 7, 9-14)
 
-### ⏳ Phase 2 — Remaining Features (TODO)
-4. **stats.py** — statistics module with historical persistence
-5. **web_dashboard.py** — Flask web UI (SSE/WebSocket)
-6. **pyproject.toml + Dockerfile + .service** — deployment
-7. **README.md** — documentation update
+### ✅ Phase 2 — Remaining Features (COMPLETE)
+4. **stats.py** — SQLite persistence and stats collection
+5. **export.py** — CSV/JSONL historical stats export
+6. **models.py** — shared dataclasses
+7. **web_dashboard.py** — Flask web UI (SSE/WebSocket)
+8. **pyproject.toml + Dockerfile + .service** — deployment
 
 ---
 
@@ -177,4 +207,6 @@ pihole-twins/
 
 **Total: ~15-20 hours of focused work for a complete v2.0 release.**
 
-**Core rewrite completed in ~3 hours (items 1-5, 7, 9-14).** Remaining items estimated at ~8-12 hours.
+**Core rewrite completed in ~3 hours (items 1-5, 7, 9-14).**
+**Phase 2 (stats + export + models) completed in ~5 hours.**
+**Phase 2b (items 6, 15-18) completed — all 18 items done.**
