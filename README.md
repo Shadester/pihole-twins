@@ -68,61 +68,71 @@ pip3 install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### Quick Start — Hostnames on the Command Line
 
-Default (assumes hostnames `pihole1` and `pihole2`):
-```bash
-python3 stream_pihole_logs.py
-```
-
-### Custom Hostnames/IPs
-
+No config file needed. Just pass the hostnames:
 ```bash
 python3 stream_pihole_logs.py --pihole1 192.168.1.10 --pihole2 192.168.1.11
 ```
 
-### Filter by Device
-
-Watch queries from a specific device:
+Or with a custom SSH username:
 ```bash
+python3 stream_pihole_logs.py --pihole1 192.168.1.10 --pihole2 192.168.1.11 --username admin
+```
+
+### Using a Config File (Optional)
+
+Save server presets in `~/.config/piholetwins/config.json` or use `--servers`:
+```bash
+python3 stream_pihole_logs.py --servers myhome myoffice
+```
+
+No flags at all → loads all servers from config.
+
+### Available Commands
+
+```
+stream              Stream and merge live logs (default)
+stats               Show blocklist statistics
+export              Export logs to JSONL/CSV
+```
+
+### Stream with Filters
+
+```bash
+# Filter by device hostname
 python3 stream_pihole_logs.py --filter macbook
-# or by IP
-python3 stream_pihole_logs.py --filter 192.168.1.100
-```
 
-### Show Only Blocked Queries
-
-```bash
+# Show only blocked queries
 python3 stream_pihole_logs.py --blocked-only
-```
 
-### Verbose Mode (Show All Log Lines)
-
-By default, only query and block lines are shown. Use verbose mode to see cache/reply/forwarded lines:
-```bash
+# Verbose mode (show all log lines)
 python3 stream_pihole_logs.py --verbose
+
+# Combine options
+python3 stream_pihole_logs.py --pihole1 192.168.1.10 --pihole2 192.168.1.11 \
+                              --filter "macbook" --blocked-only --verbose
 ```
 
-### All Options
+### Command-line Options (Stream / Top-level)
+
+```
+--pihole1 HOST      Hostname/IP of first server
+--pihole2 HOST      Hostname/IP of second server
+-u, --username      SSH username (default: pi)
+-b, --blocked-only  Show only blocked queries
+-f, --filter        Filter by hostname or IP
+-v, --verbose       Show all log lines
+```
+
+### Stats and Export Subcommands
 
 ```bash
-python3 stream_pihole_logs.py --pihole1 pihole1.local \
-                               --pihole2 pihole2.local \
-                               --username pi \
-                               --filter "macbook" \
-                               --blocked-only \
-                               --verbose
-```
+# Stats
+cd /Users/shades/Documents/Kod/Misc/pihole-twins && python3 stream_pihole_logs.py stats --servers server1 server2
 
-### Command-line Options
-
-```
---pihole1       Hostname/IP of first Pi-hole (default: pihole1)
---pihole2       Hostname/IP of second Pi-hole (default: pihole2)
--u, --username  SSH username (default: pi)
--f, --filter    Filter by hostname or IP
--b, --blocked-only  Show only blocked queries
--v, --verbose   Show all log lines including cache/reply/forwarded
+# Export
+cd /Users/shades/Documents/Kod/Misc/pihole-twins && python3 stream_pihole_logs.py export --servers server1 server2 --output logs.jsonl
 ```
 
 ## Output Format

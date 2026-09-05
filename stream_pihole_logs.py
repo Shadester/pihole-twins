@@ -15,7 +15,6 @@ import os
 import re
 import socket
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -89,16 +88,22 @@ class PiHoleStreamer:
     # ── Passphrase handling ──────────────────────────────────────
 
     def _get_passphrase(self) -> str:
-        """Get SSH key passphrase from env var or interactive prompt."""
+        """Get SSH key passphrase from env var or interactive prompt.
+
+        Only prompts if a key file was explicitly specified (key_file set)
+        AND the key file actually exists — avoids asking for non-existent keys.
+        """
         env_key = f'SSH_KEY_PASSPHRASE_{self.config.name.upper().replace("-", "_")}'
         env_val = os.environ.get(env_key)
         if env_val:
             return env_val
 
-        key_path = (self.config.key_file
-                    or (Path.home() / '.ssh'
-                        / (self._parse_ssh_config().get('identityfile') or Path(''))))
-        if key_path and key_path.exists():
+        # Only prompt if the user explicitly set a key_file on this config.
+        if not self.config.key_file:
+            return ''
+
+        key_path = Path(self.config.key_file)
+        if key_path.exists():
             try:
                 print(f"\nEnter passphrase for {self.config.name} "
                       f"(or press Enter to skip):", end='', flush=True)
@@ -170,24 +175,21 @@ class PiHoleStreamer:
             self.dns_cache[ip] = ip
             return ip
 
-    def resolve_hostname_with_timeout(self, ip: str) -> str:
-        """Resolve IP with explicit 2-second timeout using ThreadPoolExecutor."""
+    async def resolve_hostname_with_timeout(self, ip: str) -> str:
+        """Resolve an IP address, returning the IP if lookup takes over two seconds."""
         if ip in self.dns_cache:
             return self.dns_cache[ip]
 
-        loop = asyncio.get_event_loop()
-        executor = ThreadPoolExecutor(max_workers=1)
+        loop = asyncio.get_running_loop()
         try:
-            future = loop.run_in_executor(executor, socket.gethostbyaddr, ip)
-            hostname = future.result(timeout=2)
-            self.dns_cache[ip] = hostname
-            return hostname
-        except FuturesTimeoutError:
-            self.dns_cache[ip] = ip
-            return ip
-        except (socket.herror, socket.gaierror):
-            self.dns_cache[ip] = ip
-            return ip
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, socket.gethostbyaddr, ip), timeout=2)
+            hostname = result[0]
+        except (asyncio.TimeoutError, socket.herror, socket.gaierror):
+            hostname = ip
+
+        self.dns_cache[ip] = hostname
+        return hostname
 
     # ── Log parsing ──────────────────────────────────────────────
 
@@ -266,7 +268,7 @@ class PiHoleStreamer:
                         if show_blocked_only and not is_blocked:
                             continue
 
-                        hostname = self.resolve_hostname_with_timeout(ip)
+                        hostname = await self.resolve_hostname_with_timeout(ip)
 
                         if filter_host and filter_host.lower() not in hostname.lower() \
                                 and filter_host != ip:
@@ -306,9 +308,10 @@ class PiHoleStreamer:
                                      f"{line}")
                         await queue.put(formatted)
 
-            except Exception:
-                print(f"\n{Colors.YELLOW}{self.config.name}: Stream ended, "
-                      f"reconnecting...{Colors.RESET}", file=sys.stderr)
+            except Exception as e:
+                print(f"\n{Colors.YELLOW}{self.config.name}: Stream error "
+                      f"({type(e).__name__}: {e}); reconnecting...{Colors.RESET}",
+                      file=sys.stderr)
                 if export_file:
                     export_file.close()
                     export_file = None
@@ -397,24 +400,40 @@ async def _cmd_stats(args: argparse.Namespace, servers: List[ServerConfig]) -> i
 # ─── CLI entry point ──────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser with subcommands."""
+    """Build the CLI argument parser.
+
+    Stream mode is the implicit default (invocable without any subcommand).
+    Stats and export remain explicit subcommands.
+    """
     parser = argparse.ArgumentParser(
         prog='pihole-twins',
         description='Stream and merge Pi-hole query logs from multiple servers.',
     )
+
+    # ── Stream (default) ──────────────────────────────────────────
+    # Flags available regardless of subcommand
+    parser.add_argument('--pihole1', metavar='HOST',
+                        help='Hostname/IP of first server (overrides config)')
+    parser.add_argument('--pihole2', metavar='HOST',
+                        help='Hostname/IP of second server (overrides config)')
+    parser.add_argument('--username', '-u', default=None,
+                        help='SSH username (default: pi)')
+    parser.add_argument('--blocked-only', '-b', action='store_true',
+                        help='Show only blocked queries')
+    parser.add_argument('--filter', '-f', default=None,
+                        help='Filter by hostname or IP')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Show all log lines including cache/reply/forwarded')
+
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # ── stream ────────────────────────────────────────────────────
+    # Implicit stream: no default function, treated as stream mode
+    # We detect 'stream' mode when command is None or 'stream'
+
+    # ── stream subcommand (explicit) ──────────────────────────────
     sp_stream = subparsers.add_parser('stream', help='Stream and merge live logs')
-    sp_stream.set_defaults(func=_cmd_stream)
     sp_stream.add_argument('--servers', '-s', nargs='+',
-                           help='Server names (default: from config)')
-    sp_stream.add_argument('--blocked-only', '-b', action='store_true',
-                           help='Show only blocked queries')
-    sp_stream.add_argument('--filter', '-f', default=None,
-                           help='Filter by hostname or IP')
-    sp_stream.add_argument('--verbose', '-v', action='store_true',
-                           help='Show unparseable log lines too')
+                           help='Server names from config file')
     sp_stream.add_argument('--export', '-e', default=None,
                            help='Export log entries as JSONL to file')
 
@@ -437,23 +456,63 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_servers(args: argparse.Namespace) -> List[ServerConfig]:
+    """Resolve server list from config file, CLI flags, or both.
+
+    Priority (highest to lowest):
+      1. --pihole1 / --pihole2  → creates servers named "pihole1", "pihole2"
+      2. --servers NAME1 NAME2  → looks up names in config file
+      3. (none)                 → loads all servers from config file
+    """
+    pihole1 = getattr(args, 'pihole1', None)
+    pihole2 = getattr(args, 'pihole2', None)
+    server_names = getattr(args, 'servers', None)
+    username = getattr(args, 'username', None)
+
+    # Direct hostnames on CLI — bypass config entirely
+    if pihole1 or pihole2:
+        servers = []
+        names_used = []
+        if pihole1:
+            name = 'pihole1' if not server_names else server_names[0]
+            servers.append(ServerConfig(name=name, hostname=pihole1, username=username or 'pi'))
+            names_used.append(name)
+        if pihole2:
+            name = 'pihole2' if len(names_used) < 2 else server_names[1]
+            servers.append(ServerConfig(name=name, hostname=pihole2, username=username or 'pi'))
+            names_used.append(name)
+        return servers
+
+    # --servers: look up names in config, fall back to bare names
+    if server_names:
+        return load_servers(server_names)
+
+    # No flags: load all from config file
+    return load_servers()
+
+
 def main() -> int:
     """Main entry point."""
     parser = _build_parser()
     args = parser.parse_args()
 
-    server_names: Optional[List[str]] = getattr(args, 'servers', None)
-    servers = load_servers(server_names) if server_names else load_servers()
+    # Determine which mode we're in
+    command = getattr(args, 'command', None)
+    handler = getattr(args, 'func', _cmd_stream)
+
+    servers = _resolve_servers(args)
 
     if not servers:
-        print(f"{Colors.RED}No servers configured. Edit config or pass --servers."
-              f"{Colors.RESET}", file=sys.stderr)
+        print(f"{Colors.RED}No servers configured. "
+              f"Pass --pihole1 HOST --pihole2 HOST, or "
+              f"use --servers NAME1 NAME2, "
+              f"or create a config file.{Colors.RESET}",
+              file=sys.stderr)
         return 1
 
     for i, sv in enumerate(servers):
         sv.color_index = i
 
-    handler = getattr(args, 'func', _cmd_stream)
     return asyncio.run(handler(args, servers))
 
 

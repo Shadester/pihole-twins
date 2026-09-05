@@ -35,3 +35,7 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local config (never commit)
+.env
+.piholetwins/

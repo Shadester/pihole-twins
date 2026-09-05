@@ -277,13 +277,15 @@ async def collect_stats_from_server(streamer: PiHoleStreamer,
             output = output.decode('utf-8', errors='ignore')
 
         stats = ServerStats()
-        entries = output.strip().split('\n') if output.strip() else []
+        entries = (output.strip()
+                   .replace('\r', '')
+                   .split('\n')) if output.strip() else []
 
         for line in entries:
             parsed = streamer.parse_log_line(line)
             if parsed:
                 query_part, ip, is_blocked = parsed
-                hostname = streamer.resolve_hostname_with_timeout(ip)
+                hostname = await streamer.resolve_hostname_with_timeout(ip)
                 host_display = (f"{hostname} ({ip})" if hostname != ip else ip)
 
                 entry = LogEntry(
