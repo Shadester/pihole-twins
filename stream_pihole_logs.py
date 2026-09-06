@@ -397,6 +397,33 @@ async def _cmd_stats(args: argparse.Namespace, servers: List[ServerConfig]) -> i
     return 0
 
 
+async def _cmd_export(args: argparse.Namespace, servers: List[ServerConfig]) -> int:
+    """Collect historical log entries from servers and export to file."""
+    from stats import StatsDB, collect_stats_from_server
+    from export import Exporter
+
+    db = StatsDB()
+    output_path = Path(getattr(args, 'output')).resolve()
+    max_lines = getattr(args, 'lines', 1000)
+
+    print(f"{Colors.BOLD}Collecting up to {max_lines} log lines from {len(servers)} server(s)...{Colors.RESET}")
+
+    for server in servers:
+        streamer = PiHoleStreamer(server)
+        try:
+            print(f"{Colors.YELLOW}Collecting from {server.name}...{Colors.RESET}")
+            await collect_stats_from_server(streamer, db)
+        except Exception as e:
+            print(f"{Colors.RED}{server.name}: {e}{Colors.RESET}", file=sys.stderr)
+        finally:
+            streamer.close()
+
+    exporter = Exporter(db)
+    count = await exporter.export_all(output_path)
+    print(f"{Colors.GREEN}Exported {count} record(s) to {output_path}{Colors.RESET}")
+    return 0
+
+
 # ─── CLI entry point ──────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -435,7 +462,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp_stream.add_argument('--servers', '-s', nargs='+',
                            help='Server names from config file')
     sp_stream.add_argument('--export', '-e', default=None,
-                           help='Export log entries as JSONL to file')
+                           help='Export live log entries as JSONL to file')
 
     # ── stats ─────────────────────────────────────────────────────
     sp_stats = subparsers.add_parser('stats', help='Show blocklist statistics')
@@ -444,8 +471,8 @@ def _build_parser() -> argparse.ArgumentParser:
                            help='Server names (default: from config)')
 
     # ── export ────────────────────────────────────────────────────
-    sp_export = subparsers.add_parser('export', help='Export logs to JSONL/CSV')
-    sp_export.set_defaults(func=_cmd_stream)
+    sp_export = subparsers.add_parser('export', help='Export historical logs to JSONL/CSV')
+    sp_export.set_defaults(func=_cmd_export)
     sp_export.add_argument('--servers', '-s', nargs='+',
                            help='Server names (default: from config)')
     sp_export.add_argument('--output', '-o', required=True,
