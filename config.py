@@ -2,7 +2,6 @@
 
 Supports:
   - ~/.config/piholetwins/config.json (or %APPDATA%/piholetwins/config.json on Windows)
-  - ~/.env or .env file in project root (dotenv format)
   - Command-line overrides take highest priority
 """
 
@@ -38,16 +37,10 @@ def config_file() -> Path:
     return _config_dir() / 'piholetwins' / 'config.json'
 
 
-def env_file() -> Path:
-    """Return path to the .env file (project root)."""
-    return Path(__file__).resolve().parent / '.env'
-
-
 def load_config() -> Dict[str, Any]:
-    """Load configuration from config file and .env, merging them."""
+    """Load configuration from config.json."""
     cfg: Dict[str, Any] = {}
 
-    # Load config.json if it exists
     path = config_file()
     if path.exists():
         try:
@@ -55,21 +48,6 @@ def load_config() -> Dict[str, Any]:
                 cfg = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             print(f"Warning: Could not read {path}: {e}", file=sys.stderr)
-
-    # Load .env overrides (simple KEY=VALUE, no parsing library needed)
-    env_path = env_file()
-    if env_path.exists():
-        try:
-            with open(env_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    if '=' in line:
-                        key, _, value = line.partition('=')
-                        cfg[key.strip()] = value.strip().strip('"').strip("'")
-        except OSError as e:
-            print(f"Warning: Could not read {env_path}: {e}", file=sys.stderr)
 
     return cfg
 
